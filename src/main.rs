@@ -4,7 +4,6 @@ use rocket::{
         sync::broadcast::{channel, error::RecvError, Sender},
     }, Shutdown, State
 };
-use serde_json::json;
 
 #[macro_use]
 extern crate rocket;
@@ -41,8 +40,7 @@ async fn events(queue: &State<Sender<Message>>, mut end: Shutdown) -> EventStrea
                 },
                 _ = &mut end => break,
             };
-            let json_msg = json!(&msg);
-            yield Event::data(json_msg.to_string());
+            yield Event::json(&msg);
         }
     }
 }
