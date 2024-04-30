@@ -68,3 +68,87 @@ const addMessage = (room, username, message, push = false) => {
 
     }
 }
+
+function connect(uri) {
+    const events = new EventSource(uri);
+
+    events.addEventListener("message", (ev) => {
+      console.log("raw data", JSON.stringify(ev.data));
+      console.log("decoded data", JSON.stringify(JSON.parse(ev.data)));
+      const msg = JSON.parse(ev.data);
+      if (!("message" in msg) || !("room" in msg) || !("username" in msg)) return;
+      addMessage(msg.room, msg.username, msg.message, true);
+    });
+
+    events.addEventListener("open", () => {
+      setConnectedStatus(true);
+      console.log(`connected to event stream at ${uri}`);
+      retryTime = 1;
+    });
+
+    events.addEventListener("error", () => {
+      setConnectedStatus(false);
+      events.close();
+
+      let timeout = retryTime;
+      retryTime = Math.min(64, retryTime * 2);
+      console.log(`connection lost. attempting to reconnect in ${timeout}s`);
+      setTimeout(() => connect(uri), (() => timeout * 1000)());
+    });
+    connect(uri);
+  }
+
+
+
+// Set the connection status: `true` for connected, `false` for disconnected.
+function setConnectedStatus(status) {
+  STATE.connected = status;
+  statusDiv.className = (status) ? "connected" : "reconnecting";
+}
+
+// Let's go! Initialize the world.
+function init() {
+  // Initialize some rooms.
+  addRoom("lobby");
+  addRoom("rocket");
+  changeRoom("lobby");
+  addMessage("lobby", "Rocket", "Hey! Open another browser tab, send a message.", true);
+  addMessage("rocket", "Rocket", "This is another room. Neat, huh?", true);
+
+  // Set up the form handler.
+  newMessageForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const room = STATE.room;
+    const message = messageField.value;
+    const username = usernameField.value || "guest";
+    if (!message || !username) return;
+
+    if (STATE.connected) {
+      fetch("/message", {
+        method: "POST",
+        body: new URLSearchParams({ room, username, message }),
+      }).then((response) => {
+        if (response.ok) messageField.value = "";
+      });
+    }
+  })
+
+  // Set up the new room handler.
+  newRoomForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const room = roomNameField.value;
+    if (!room) return;
+
+    roomNameField.value = "";
+    if (!addRoom(room)) return;
+
+    addMessage(room, "Rocket", `Look, your own "${room}" room! Nice.`, true);
+  })
+
+  // Subscribe to server-sent events.
+  subscribe("/events");
+}
+
+init();
